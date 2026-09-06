@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "835106243722",
+    "project_id": "cyberpath-navigator-2026",
+    "storage_bucket": "cyberpath-navigator-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:835106243722:android:c4e1884c6a620c45e3d973",
+        "android_client_info": {
+          "package_name": "com.example.aaa"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "835106243722-a9u81h9r6l7r0dqhg4v31kan48gvav0c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.aaa",
+            "certificate_hash": "885a01ca9f2a4616caca62d83e3cb257bc029a6b"
+          }
+        },
+        {
+          "client_id": "835106243722-huo8til5lojocko7p04fl5o2hnvb3580.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAi-GWDvYHsNOFXzxv-Oe9wVEoNVmi0pIs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "835106243722-huo8til5lojocko7p04fl5o2hnvb3580.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

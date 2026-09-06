@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "aaa",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "emulator-5554",
+      "preLaunchTask": "Start Android Emulator"
+    },
+    {
+      "name": "aaa (profile mode)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "profile",
+      "deviceId": "emulator-5554",
+      "preLaunchTask": "Start Android Emulator"
+    },
+    {
+      "name": "aaa (release mode)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release",
+      "deviceId": "emulator-5554",
+      "preLaunchTask": "Start Android Emulator"
+    }
+  ]
+}

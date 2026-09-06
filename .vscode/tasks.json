@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Android Emulator",
+      "type": "shell",
+      "command": "emulator",
+      "args": [
+        "-avd",
+        "Pixel_9"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}
