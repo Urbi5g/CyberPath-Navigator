@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -6,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../home/home_screen.dart';
 import '../register/register_screen.dart';
 import '../forgot_password/forgot_password_screen.dart';
 
@@ -31,6 +33,45 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ─────────────────────────────────────────────
+  // Navigate according to user role
+  // ─────────────────────────────────────────────
+  Future<void> _navigateAccordingToRole(User user) async {
+    final userDocument = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    if (!userDocument.exists) {
+      throw Exception('User data was not found in Firestore.');
+    }
+
+    final userData = userDocument.data();
+
+    if (userData == null) {
+      throw Exception('User data is empty.');
+    }
+
+    final role = userData['role']?.toString().trim().toLowerCase();
+
+    if (!mounted) return;
+
+    if (role == 'admin') {
+      Navigator.pushReplacementNamed(context, '/admin_dashboard');
+      return;
+    }
+
+    if (role == 'student') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const students_dashboard()),
+      );
+      return;
+    }
+
+    throw Exception('Invalid user role. Please contact the administrator.');
+  }
+
+  // ─────────────────────────────────────────────
   // Email / Password Login
   // ─────────────────────────────────────────────
   Future<void> _login() async {
@@ -49,10 +90,16 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+
+      final user = credential.user;
+
+      if (user == null) {
+        throw Exception('Unable to retrieve the signed-in user.');
+      }
 
       if (!mounted) return;
 
@@ -60,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text('Signed in successfully.')));
 
-      // Navigation to the next screen will be added later.
+      await _navigateAccordingToRole(user);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
@@ -92,13 +139,11 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong. Please try again.'),
-        ),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
     } finally {
       if (mounted) {
@@ -127,7 +172,15 @@ class _LoginScreenState extends State<LoginScreen> {
         idToken: googleAuth.idToken,
       );
 
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+
+      final user = userCredential.user;
+
+      if (user == null) {
+        throw Exception('Unable to retrieve the signed-in user.');
+      }
 
       if (!mounted) return;
 
@@ -135,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SnackBar(content: Text('Signed in with Google successfully.')),
       );
 
-      // Navigation to the next screen will be added later.
+      await _navigateAccordingToRole(user);
     } on GoogleSignInException catch (e) {
       if (!mounted) return;
 
@@ -162,13 +215,11 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong with Google sign-in.'),
-        ),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
     } finally {
       if (mounted) {
