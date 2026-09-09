@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
+import 'features/admin/admin_dashboard.dart';
 import 'features/auth/login/login_screen.dart';
+import 'features/roadmaps/roadmaps_explorer_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +25,11 @@ class CyberPathApp extends StatelessWidget {
       title: 'CyberPath Navigator',
       theme: AppTheme.darkTheme,
       home: const LoginScreen(),
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/admin_dashboard': (context) => const AdminDashboard(),
+        '/roadmaps_explorer': (context) => const RoadmapsExplorerScreen(),
+      },
     );
   }
 }

@@ -38,9 +38,13 @@ class _SelfAssessmentScreenState extends State<SelfAssessmentScreen> {
       return;
     }
 
+    final selectedLevel = _levels[_selectedLevel!];
+
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const ChooseJobRoleScreen()),
+      MaterialPageRoute(
+        builder: (context) => ChooseJobRoleScreen(level: selectedLevel),
+      ),
     );
   }
 

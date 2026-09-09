@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -7,7 +9,9 @@ import '../../core/theme/app_text_styles.dart';
 import '../home/home_screen.dart';
 
 class ChooseJobRoleScreen extends StatefulWidget {
-  const ChooseJobRoleScreen({super.key});
+  final String level;
+
+  const ChooseJobRoleScreen({super.key, required this.level});
 
   @override
   State<ChooseJobRoleScreen> createState() => _ChooseJobRoleScreenState();
@@ -15,6 +19,7 @@ class ChooseJobRoleScreen extends StatefulWidget {
 
 class _ChooseJobRoleScreenState extends State<ChooseJobRoleScreen> {
   int? _selectedRole;
+  bool _isSaving = false;
 
   final List<String> _roles = [
     'SOC Analyst',
@@ -43,7 +48,7 @@ class _ChooseJobRoleScreenState extends State<ChooseJobRoleScreen> {
     Icons.warning_amber_outlined,
   ];
 
-  void _continue() {
+  Future<void> _continue() async {
     if (_selectedRole == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a job role.')),
@@ -51,10 +56,69 @@ class _ChooseJobRoleScreenState extends State<ChooseJobRoleScreen> {
       return;
     }
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-    );
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('User session not found. Please log in again.'),
+        ),
+      );
+      return;
+    }
+
+    final selectedInterest = _roles[_selectedRole!];
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Save the user's level and selected interest.
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'level': widget.level,
+        'interest': selectedInterest,
+      }, SetOptions(merge: true));
+
+      // Create the user's progress document only if it does not exist.
+      // This prevents existing progress from being overwritten.
+      final progressRef = FirebaseFirestore.instance
+          .collection('user_progress')
+          .doc(user.uid);
+
+      final progressDocument = await progressRef.get();
+
+      if (!progressDocument.exists) {
+        await progressRef.set({
+          'xp': 0,
+          'badges': [],
+          'certificates': [],
+          'activePathways': [],
+          'recentActivities': [],
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const students_dashboard()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save your information: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   @override
@@ -244,15 +308,21 @@ class _ChooseJobRoleScreenState extends State<ChooseJobRoleScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _continue,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Text('Continue'),
-                      SizedBox(width: AppSpacing.sm),
-                      Icon(Icons.arrow_forward, size: 20),
-                    ],
-                  ),
+                  onPressed: _isSaving ? null : _continue,
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Text('Continue'),
+                            SizedBox(width: AppSpacing.sm),
+                            Icon(Icons.arrow_forward, size: 20),
+                          ],
+                        ),
                 ),
               ),
 
