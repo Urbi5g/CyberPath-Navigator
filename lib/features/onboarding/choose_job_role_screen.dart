@@ -95,6 +95,7 @@ class _ChooseJobRoleScreenState extends State<ChooseJobRoleScreen> {
           'certificates': [],
           'activePathways': [],
           'recentActivities': [],
+          'completedStages': [],
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });

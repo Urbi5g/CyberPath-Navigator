@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
@@ -27,11 +28,169 @@ class _StageExecutionScreenState extends State<StageExecutionScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   Map<String, dynamic>? _stageData;
+  bool _isCompleting = false;
+  bool _isCompleted = false;
 
   @override
   void initState() {
     super.initState();
     _loadStage();
+  }
+
+  Widget _buildCompleteStageButton(BuildContext context) {
+    if (_isCompleted) {
+      final xp = _stageData?['xp'];
+      final xpText = xp is num ? '+${xp.toInt()} XP' : 'Completed';
+
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: Colors.green.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle_rounded, color: Colors.green),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              'Stage Completed',
+              style: AppTextStyles.bodyLarge.copyWith(
+                color: Colors.green,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              xpText,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.green,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _isCompleting ? null : _completeStage,
+        icon: _isCompleting
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.check_circle_outline_rounded),
+        label: Text(_isCompleting ? 'Completing...' : 'Complete Stage'),
+      ),
+    );
+  }
+
+  Future<void> _completeStage() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You must be logged in to complete this stage.'),
+        ),
+      );
+      return;
+    }
+
+    if (_isCompleted || _isCompleting) {
+      return;
+    }
+
+    setState(() {
+      _isCompleting = true;
+    });
+
+    try {
+      final progressRef = _firestore.collection('user_progress').doc(user.uid);
+
+      final progressSnapshot = await progressRef.get();
+      final progressData = progressSnapshot.data() ?? {};
+
+      final completedStages = progressData['completedStages'] is List
+          ? List<Map<String, dynamic>>.from(
+              (progressData['completedStages'] as List).whereType<Map>().map(
+                (item) => Map<String, dynamic>.from(item),
+              ),
+            )
+          : <Map<String, dynamic>>[];
+
+      final alreadyCompleted = completedStages.any(
+        (stage) =>
+            stage['pathId']?.toString() == widget.pathId &&
+            stage['stageId']?.toString() == widget.stageId,
+      );
+
+      if (alreadyCompleted) {
+        if (!mounted) return;
+
+        setState(() {
+          _isCompleted = true;
+          _isCompleting = false;
+        });
+
+        return;
+      }
+
+      final stageXp = _stageData?['xp'];
+      final xp = stageXp is num ? stageXp.toInt() : 0;
+
+      final currentXp = progressData['xp'] is num
+          ? (progressData['xp'] as num).toInt()
+          : 0;
+
+      completedStages.add({
+        'pathId': widget.pathId,
+        'stageId': widget.stageId,
+        'completedAt': Timestamp.now(),
+      });
+
+      await progressRef.set({
+        'xp': currentXp + xp,
+        'completedStages': completedStages,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (!mounted) return;
+
+      setState(() {
+        _isCompleted = true;
+        _isCompleting = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            xp > 0 ? 'Stage completed! +$xp XP' : 'Stage completed!',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isCompleting = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to complete stage: $e')));
+    }
   }
 
   Future<void> _loadStage() async {
@@ -115,6 +274,8 @@ class _StageExecutionScreenState extends State<StageExecutionScreen> {
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
           _buildStageHeader(context),
+          const SizedBox(height: AppSpacing.lg),
+          _buildCompleteStageButton(context),
           const SizedBox(height: AppSpacing.lg),
           _buildTopicsSection(context),
           const SizedBox(height: AppSpacing.lg),

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'quiz_management_screen.dart';
 
 class StageManagementScreen extends StatefulWidget {
   final String pathId;
@@ -465,6 +466,23 @@ class _StageManagementScreenState extends State<StageManagementScreen> {
                 onTap: () {
                   Navigator.of(context).pop();
                   _showEditStageDialog(data, stageId);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.quiz_outlined),
+                title: const Text('Manage Quiz'),
+                onTap: () {
+                  Navigator.of(context).pop();
+
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => QuizManagementScreen(
+                        pathId: widget.pathId,
+                        stageId: stageId,
+                        stageTitle: title,
+                      ),
+                    ),
+                  );
                 },
               ),
               ListTile(
