@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'dashboard_service.dart';
 
 import 'stage_management_screen.dart';
 
@@ -13,12 +14,51 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
+  final DashboardService dashboardService = DashboardService();
+
+  int paths = 0;
+  int users = 0;
+  int stages = 0;
+  bool loading = true;
+  final TextEditingController _userSearchController =
+  TextEditingController();
+
+  String _userSearch = '';
 
   final List<_AdminMenuItem> _menuItems = const [
     _AdminMenuItem(title: 'Dashboard', icon: Icons.dashboard_outlined),
     _AdminMenuItem(title: 'Learning Paths', icon: Icons.route_outlined),
     _AdminMenuItem(title: 'Users', icon: Icons.people_outline),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    loadDashboard();
+  }
+
+  Future<void> loadDashboard() async {
+    try {
+      final p = await dashboardService.getLearningPathsCount();
+      final u = await dashboardService.getUsersCount();
+      final s = await dashboardService.getStagesCount();
+
+      if (mounted) {
+        setState(() {
+          paths = p;
+          users = u;
+          stages = s;
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
+    }
+  }
 
   Future<void> _logout() async {
     try {
@@ -46,10 +86,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       appBar: isWide
           ? null
           : AppBar(
-              title: const Text('Admin Dashboard'),
-              backgroundColor: theme.scaffoldBackgroundColor,
-              elevation: 0,
-            ),
+        title: const Text('Admin Dashboard'),
+        backgroundColor: theme.scaffoldBackgroundColor,
+        elevation: 0,
+      ),
       drawer: isWide ? null : _buildDrawer(theme),
       body: Row(
         children: [
@@ -309,19 +349,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           _buildStatCard(
                             theme,
                             title: 'Learning Paths',
-                            value: pathCount?.toString() ?? '—',
+                            value: pathCount?.toString() ?? (loading ? '...' : paths.toString()),
                             icon: Icons.route_outlined,
                           ),
                           _buildStatCard(
                             theme,
                             title: 'Users',
-                            value: '—',
+                            value: loading ? '...' : users.toString(),
                             icon: Icons.people_outline,
                           ),
                           _buildStatCard(
                             theme,
                             title: 'Stages',
-                            value: '—',
+                            value: loading ? '...' : stages.toString(),
                             icon: Icons.menu_book_outlined,
                           ),
                         ],
@@ -433,7 +473,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       icon: Icons.route_outlined,
                       title: 'No learning paths yet',
                       message:
-                          'Learning paths created by the administrator '
+                      'Learning paths created by the administrator '
                           'will appear here.',
                     )
                   else
@@ -469,12 +509,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return const _AddLearningPathDialog();
       },
     );
+    // تحديث الإحصائيات بعد الإغلاق
+    loadDashboard();
   }
 
   Future<void> _showEditPathDialog(
-    String pathId,
-    Map<String, dynamic> data,
-  ) async {
+      String pathId,
+      Map<String, dynamic> data,
+      ) async {
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -485,52 +527,375 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildUsersSection(ThemeData theme) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildPageHeader(
-              theme,
-              title: 'Users',
-              subtitle: 'Manage student and administrator permissions.',
-            ),
-            const SizedBox(height: 24),
-            _buildSectionCard(
-              theme,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.security_outlined,
-                    size: 32,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      'User role management will be connected after '
-                      'the Firestore security rules are updated to allow '
-                      'administrators to manage other users safely.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildPageHeader(
-    ThemeData theme, {
-    required String title,
-    required String subtitle,
-    Widget? action,
-  }) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .snapshots(),
+
+
+      builder: (context, snapshot) {
+
+
+        if (snapshot.connectionState ==
+            ConnectionState.waiting) {
+
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+
+        }
+
+
+        if (snapshot.hasError) {
+
+          return Center(
+            child: Text(
+              snapshot.error.toString(),
+            ),
+          );
+
+        }
+
+
+        final allUsers =
+            snapshot.data?.docs ?? [];
+
+
+
+        final filteredUsers =
+        allUsers.where((user) {
+
+
+          final data = user.data();
+
+
+          final name =
+          (data['name'] ?? '')
+              .toString()
+              .toLowerCase();
+
+
+          final email =
+          (data['email'] ?? '')
+              .toString()
+              .toLowerCase();
+
+
+
+          return name.contains(
+            _userSearch.toLowerCase(),
+          ) ||
+              email.contains(
+                _userSearch.toLowerCase(),
+              );
+
+
+        }).toList();
+
+
+
+
+
+        return Column(
+
+          children: [
+
+
+
+            // شريط البحث
+
+            TextField(
+
+              controller:
+              _userSearchController,
+
+
+              decoration:
+              InputDecoration(
+
+                hintText:
+                'Search users...',
+
+
+                prefixIcon:
+                const Icon(
+                  Icons.search,
+                ),
+
+
+                border:
+                OutlineInputBorder(
+
+                  borderRadius:
+                  BorderRadius.circular(12),
+
+                ),
+
+              ),
+
+
+
+              onChanged: (value) {
+
+
+                setState(() {
+
+                  _userSearch = value;
+
+                });
+
+
+              },
+
+            ),
+
+
+
+            const SizedBox(height: 16),
+
+
+
+
+            Expanded(
+
+              child: ListView.builder(
+
+                itemCount:
+                filteredUsers.length,
+
+
+                itemBuilder:
+                    (context, index) {
+
+
+
+                  final data =
+                  filteredUsers[index]
+                      .data();
+
+
+
+                  return Card(
+
+                    margin:
+                    const EdgeInsets.only(
+                      bottom: 12,
+                    ),
+
+
+                    child: ListTile(
+
+
+
+                      leading: Row(
+
+                        mainAxisSize:
+                        MainAxisSize.min,
+
+
+                        children: [
+
+
+
+                          CircleAvatar(
+
+                            radius: 15,
+
+                            child:
+                            Text(
+                              '${index + 1}',
+                            ),
+
+                          ),
+
+
+
+                          const SizedBox(
+                            width: 8,
+                          ),
+
+
+
+                          const CircleAvatar(
+
+                            child:
+                            Icon(
+                              Icons.person,
+                            ),
+
+                          ),
+
+
+                        ],
+
+                      ),
+
+
+
+
+                      title: Text(
+
+                        data['name'] ??
+                            'No Name',
+
+
+                        style:
+                        const TextStyle(
+
+                          fontWeight:
+                          FontWeight.w600,
+
+                        ),
+
+                      ),
+
+
+
+
+                      subtitle: Column(
+
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+
+
+                        children: [
+
+
+
+                          Text(
+
+                            'Level: ${data['level'] ?? '-'}',
+
+                          ),
+
+
+
+                          Text(
+
+                            data['email'] ??
+                                '',
+
+                          ),
+
+
+
+                          Text(
+
+                            'Role: ${data['role'] ?? 'student'}',
+
+                          ),
+
+
+
+                        ],
+
+                      ),
+
+
+
+
+
+                      trailing:
+
+                      DropdownButton<String>(
+
+                        value:
+                        data['role'] ??
+                            'student',
+
+
+                        items: const [
+
+
+                          DropdownMenuItem(
+
+                            value:
+                            'student',
+
+                            child:
+                            Text(
+                              'Student',
+                            ),
+
+                          ),
+
+
+
+                          DropdownMenuItem(
+
+                            value:
+                            'admin',
+
+                            child:
+                            Text(
+                              'Admin',
+                            ),
+
+                          ),
+
+
+                        ],
+
+
+
+                        onChanged:
+                            (value) async {
+
+
+                          if (value == null)
+                            return;
+
+
+
+                          await FirebaseFirestore
+                              .instance
+                              .collection('users')
+                              .doc(
+                            filteredUsers[index]
+                                .id,
+                          )
+                              .update({
+
+                            'role':
+                            value,
+
+                          });
+
+
+
+                        },
+
+                      ),
+
+
+                    ),
+
+                  );
+
+
+                },
+
+              ),
+
+            ),
+
+          ],
+
+        );
+
+
+      },
+
+    );
+
+  }  Widget _buildPageHeader(
+      ThemeData theme, {
+        required String title,
+        required String subtitle,
+        Widget? action,
+      }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -555,11 +920,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildStatCard(
-    ThemeData theme, {
-    required String title,
-    required String value,
-    required IconData icon,
-  }) {
+      ThemeData theme, {
+        required String title,
+        required String value,
+        required IconData icon,
+      }) {
     return _buildSectionCard(
       theme,
       child: Row(
@@ -596,10 +961,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildPathCard(
-    ThemeData theme,
-    Map<String, dynamic> data,
-    String pathId,
-  ) {
+      ThemeData theme,
+      Map<String, dynamic> data,
+      String pathId,
+      ) {
     final title = data['title']?.toString() ?? 'Untitled Path';
     final description = data['description']?.toString() ?? '';
     final level = data['level']?.toString() ?? '—';
@@ -696,8 +1061,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             runSpacing: 10,
             children: [
               OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
+                onPressed: () async {
+                  await Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => StageManagementScreen(
                         pathId: pathId,
@@ -705,6 +1070,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                     ),
                   );
+                  // تحديث إحصائية المراحل بعد العودة
+                  loadDashboard();
                 },
                 icon: const Icon(Icons.account_tree_outlined),
                 label: const Text('Manage Stages'),
@@ -760,11 +1127,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildActionButton(
-    ThemeData theme, {
-    required IconData icon,
-    required String title,
-    required VoidCallback onPressed,
-  }) {
+      ThemeData theme, {
+        required IconData icon,
+        required String title,
+        required VoidCallback onPressed,
+      }) {
     return OutlinedButton.icon(
       onPressed: onPressed,
       icon: Icon(icon),
@@ -790,11 +1157,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildEmptyState(
-    ThemeData theme, {
-    required IconData icon,
-    required String title,
-    required String message,
-  }) {
+      ThemeData theme, {
+        required IconData icon,
+        required String title,
+        required String message,
+      }) {
     return _buildSectionCard(
       theme,
       child: Padding(
@@ -969,14 +1336,14 @@ class _AddLearningPathDialogState extends State<_AddLearningPathDialog> {
                 onChanged: _isSaving
                     ? null
                     : (value) {
-                        if (value == null) {
-                          return;
-                        }
+                  if (value == null) {
+                    return;
+                  }
 
-                        setState(() {
-                          _selectedLevel = value;
-                        });
-                      },
+                  setState(() {
+                    _selectedLevel = value;
+                  });
+                },
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
@@ -1011,14 +1378,14 @@ class _AddLearningPathDialogState extends State<_AddLearningPathDialog> {
                 onChanged: _isSaving
                     ? null
                     : (value) {
-                        if (value == null) {
-                          return;
-                        }
+                  if (value == null) {
+                    return;
+                  }
 
-                        setState(() {
-                          _selectedInterest = value;
-                        });
-                      },
+                  setState(() {
+                    _selectedInterest = value;
+                  });
+                },
               ),
             ],
           ),
@@ -1029,18 +1396,18 @@ class _AddLearningPathDialogState extends State<_AddLearningPathDialog> {
           onPressed: _isSaving
               ? null
               : () {
-                  Navigator.of(context).pop();
-                },
+            Navigator.of(context).pop();
+          },
           child: const Text('Cancel'),
         ),
         ElevatedButton(
           onPressed: _isSaving ? null : _createPath,
           child: _isSaving
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
               : const Text('Create Path'),
         ),
       ],
@@ -1133,12 +1500,12 @@ class _EditLearningPathDialogState extends State<_EditLearningPathDialog> {
           .collection('learning_paths')
           .doc(widget.pathId)
           .update({
-            'title': title,
-            'description': description,
-            'level': _selectedLevel,
-            'interest': _selectedInterest,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+        'title': title,
+        'description': description,
+        'level': _selectedLevel,
+        'interest': _selectedInterest,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
       if (!mounted) return;
 
@@ -1194,20 +1561,20 @@ class _EditLearningPathDialogState extends State<_EditLearningPathDialog> {
                 items: _levels
                     .map(
                       (level) =>
-                          DropdownMenuItem(value: level, child: Text(level)),
-                    )
+                      DropdownMenuItem(value: level, child: Text(level)),
+                )
                     .toList(),
                 onChanged: _isSaving
                     ? null
                     : (value) {
-                        if (value == null) {
-                          return;
-                        }
+                  if (value == null) {
+                    return;
+                  }
 
-                        setState(() {
-                          _selectedLevel = value;
-                        });
-                      },
+                  setState(() {
+                    _selectedLevel = value;
+                  });
+                },
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
@@ -1216,22 +1583,22 @@ class _EditLearningPathDialogState extends State<_EditLearningPathDialog> {
                 items: _interests
                     .map(
                       (interest) => DropdownMenuItem(
-                        value: interest,
-                        child: Text(interest),
-                      ),
-                    )
+                    value: interest,
+                    child: Text(interest),
+                  ),
+                )
                     .toList(),
                 onChanged: _isSaving
                     ? null
                     : (value) {
-                        if (value == null) {
-                          return;
-                        }
+                  if (value == null) {
+                    return;
+                  }
 
-                        setState(() {
-                          _selectedInterest = value;
-                        });
-                      },
+                  setState(() {
+                    _selectedInterest = value;
+                  });
+                },
               ),
             ],
           ),
@@ -1242,18 +1609,18 @@ class _EditLearningPathDialogState extends State<_EditLearningPathDialog> {
           onPressed: _isSaving
               ? null
               : () {
-                  Navigator.of(context).pop();
-                },
+            Navigator.of(context).pop();
+          },
           child: const Text('Cancel'),
         ),
         ElevatedButton(
           onPressed: _isSaving ? null : _updatePath,
           child: _isSaving
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
               : const Text('Save Changes'),
         ),
       ],
