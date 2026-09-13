@@ -42,7 +42,7 @@ class ThemeProvider extends InheritedWidget {
   final DynamicTheme theme;
 
   const ThemeProvider({Key? key, required this.theme, required Widget child})
-    : super(key: key, child: child);
+      : super(key: key, child: child);
 
   static DynamicTheme of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<ThemeProvider>()!.theme;
@@ -406,10 +406,10 @@ class _StudentsDashboardScreenState extends State<students_dashboard> {
   }
 
   Widget _buildErrorState(
-    BuildContext context,
-    DynamicTheme theme,
-    String error,
-  ) {
+      BuildContext context,
+      DynamicTheme theme,
+      String error,
+      ) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxl),
@@ -668,10 +668,10 @@ class MainNavigationGrid extends StatelessWidget {
         'color': theme.success,
       },
       {
-        'title': 'الشارات والملف',
-        'desc': 'إنجازاتك ونقاطك',
-        'icon': Icons.emoji_events,
-        'route': '/profile_badges',
+        'title': 'عرض المراحل',
+        'desc': 'جميع إنجازاتك والمراحل',
+        'icon': Icons.layers_outlined,
+        'route': '/stages_progress',
         'color': theme.warning,
       },
       {
@@ -730,23 +730,28 @@ class StudentFeatureCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
+        // تدرج لوني ناعم يدمج لون الأيقونة مع لون الخلفية السطحية
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [theme.surfaceLight, theme.surface],
+          colors: [
+            theme.surface,
+            iconColor.withOpacity(theme.isDark ? 0.05 : 0.03),
+          ],
         ),
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: theme.borderLight, width: 1.5),
+        // إعطاء حدود البطاقة لمسة من نفس لون الأيقونة
+        border: Border.all(
+          color: iconColor.withOpacity(theme.isDark ? 0.2 : 0.3),
+          width: 1.5,
+        ),
         boxShadow: [
+          // ظل مشع بلون الأيقونة
           BoxShadow(
-            color: iconColor.withOpacity(theme.isDark ? 0.12 : 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-          BoxShadow(
-            color: theme.isDark ? Colors.black26 : Colors.black12,
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: iconColor.withOpacity(0.12),
+            blurRadius: 15,
+            spreadRadius: -2,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -754,52 +759,81 @@ class StudentFeatureCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.lg),
+          splashColor: iconColor.withOpacity(0.1),
           highlightColor: iconColor.withOpacity(0.05),
-          splashColor: iconColor.withOpacity(0.15),
-          onTap: () => Navigator.pushNamed(context, route),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: theme.bg,
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(color: iconColor.withOpacity(0.3)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: iconColor.withOpacity(0.2),
-                        blurRadius: 6,
+          onTap: () {
+            if (route == '/stages_progress') {
+              // Navigator.push(
+              //   context,
+              //   MaterialPageRoute(
+              //     builder: (context) => const StagesProgressScreen(),
+              //   ),
+              // );
+            } else {
+              Navigator.pushNamed(context, route);
+            }
+          },
+          child: Stack(
+            children: [
+              // العلامة المائية في الخلفية (أيقونة كبيرة شفافة)
+              Positioned(
+                right: -15,
+                bottom: -15,
+                child: Icon(
+                  icon,
+                  size: 85,
+                  color: iconColor.withOpacity(theme.isDark ? 0.04 : 0.08),
+                ),
+              ),
+
+              // المحتوى الأمامي للبطاقة
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // حاوية الأيقونة مع تأثير التوهج الزجاجي
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: iconColor.withOpacity(0.15),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: iconColor.withOpacity(0.4),
+                            blurRadius: 10,
+                            spreadRadius: 1,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Icon(icon, color: iconColor, size: 24),
+                      child: Icon(icon, color: iconColor, size: 24),
+                    ),
+                    const Spacer(),
+                    Text(
+                      title,
+                      style: AppTextStyles.labelLarge.copyWith(
+                        color: theme.textPrimary,
+                        fontWeight: FontWeight.w800, // خط أكثر عرضاً
+                        letterSpacing: 0.3,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: theme.textSecondary,
+                        height: 1.3,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                Text(
-                  title,
-                  style: AppTextStyles.labelLarge.copyWith(
-                    color: theme.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  description,
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: theme.textSecondary,
-                    height: 1.4,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -814,7 +848,7 @@ class StudentProfileSummary extends StatelessWidget {
   final StudentModel student;
 
   const StudentProfileSummary({Key? key, required this.student})
-    : super(key: key);
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -979,7 +1013,7 @@ class ActivePathwaysList extends StatelessWidget {
   final List<ActivePathway> pathways;
 
   const ActivePathwaysList({Key? key, required this.pathways})
-    : super(key: key);
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -1005,10 +1039,10 @@ class ActivePathwaysList extends StatelessWidget {
   }
 
   Widget _buildPathwayCard(
-    BuildContext context,
-    ActivePathway pathway,
-    DynamicTheme theme,
-  ) {
+      BuildContext context,
+      ActivePathway pathway,
+      DynamicTheme theme,
+      ) {
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       decoration: BoxDecoration(
@@ -1083,7 +1117,7 @@ class RecentActivitiesList extends StatelessWidget {
   final List<ActivityItem> activities;
 
   const RecentActivitiesList({Key? key, required this.activities})
-    : super(key: key);
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {

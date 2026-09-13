@@ -12,6 +12,7 @@ class StageExecutionScreen extends StatefulWidget {
   final String pathId;
   final String stageId;
 
+
   const StageExecutionScreen({
     super.key,
     required this.pathId,
@@ -160,12 +161,25 @@ class _StageExecutionScreenState extends State<StageExecutionScreen> {
         'completedAt': Timestamp.now(),
       });
 
+// تجهيز تاريخ اليوم واسم المرحلة
+      final now = DateTime.now();
+      final timeString = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+      final stageTitle = _stageData?['title']?.toString() ?? 'مرحلة';
+
+      // تحديث XP والمراحل المكتملة وسجل النشاطات معاً
       await progressRef.set({
         'xp': currentXp + xp,
         'completedStages': completedStages,
+        'recentActivities': FieldValue.arrayUnion([
+          {
+            'title': 'أكملت $stageTitle',
+            'time': timeString,
+            'icon': 'task',
+            'color': 'success',
+          }
+        ]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-
       if (!mounted) return;
 
       setState(() {

@@ -25,6 +25,10 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
   bool _isLoadingUser = true;
   String? _errorMessage;
 
+  // قائمة الفلاتر وحالة الفلتر الحالي
+  final List<String> _filters = ['All', 'Beginner', 'Intermediate', 'Advanced'];
+  String _selectedFilter = 'All';
+
   @override
   void initState() {
     super.initState();
@@ -81,12 +85,53 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
     }
   }
 
+  // دالة الاشتراك في المسار وتحديث سجل النشاطات
+  Future<void> _enrollInPath(String pathId, String title) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final progressRef = _firestore.collection('user_progress').doc(user.uid);
+
+    // تنسيق التاريخ لليوم الحالي
+    final now = DateTime.now();
+    final timeString = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+    try {
+      await progressRef.set({
+        'activePathways': FieldValue.arrayUnion([
+          {
+            'id': pathId,
+            'title': title,
+            'currentStage': 'Introduction',
+            'progressPercent': 0.0,
+          }
+        ]),
+        'recentActivities': FieldValue.arrayUnion([
+          {
+            'title': 'Enrolled in $title',
+            'time': timeString,
+            'icon': 'pathway',
+            'color': 'success',
+          }
+        ])
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Successfully enrolled! Check your profile.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error enrolling: $e')),
+        );
+      }
+    }
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _learningPathsStream() {
-    return _firestore
-        .collection('learning_paths')
-        .where('level', isEqualTo: _level)
-        .where('interest', isEqualTo: _interest)
-        .snapshots();
+    return _firestore.collection('learning_paths').snapshots();
   }
 
   @override
@@ -134,19 +179,24 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
           _buildHeaderCard(context),
           const SizedBox(height: AppSpacing.lg),
           Text(
-            'Recommended Paths',
+            'All Learning Paths',
             style: AppTextStyles.headlineSmall.copyWith(
               color: theme.textTheme.bodyLarge?.color,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Learning paths matched to your current level and career interest.',
+            'Explore all available cybersecurity learning paths across different levels and domains.',
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
+
+          // شريط الفلاتر
+          _buildFilterBar(theme),
+          const SizedBox(height: AppSpacing.lg),
+
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: _learningPathsStream(),
             builder: (context, snapshot) {
@@ -163,11 +213,19 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
 
               final documents = snapshot.data?.docs ?? [];
 
-              if (documents.isEmpty) {
+              // تطبيق الفلتر على البيانات المسترجعة
+              final filteredDocuments = documents.where((doc) {
+                if (_selectedFilter == 'All') return true;
+                final docLevel = doc.data()['level']?.toString().trim() ?? '';
+                // مقارنة المستوى بغض النظر عن حالة الأحرف
+                return docLevel.toLowerCase() == _selectedFilter.toLowerCase();
+              }).toList();
+
+              if (filteredDocuments.isEmpty) {
                 return _buildEmptyState(context);
               }
 
-              final sortedDocuments = [...documents];
+              final sortedDocuments = [...filteredDocuments];
 
               sortedDocuments.sort((a, b) {
                 final aData = a.data();
@@ -198,6 +256,55 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
     );
   }
 
+  // ودجت شريط الفلاتر
+  Widget _buildFilterBar(ThemeData theme) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: _filters.map((filter) {
+          final isSelected = _selectedFilter == filter;
+          return Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.sm),
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedFilter = filter;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: 8.0,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.primary.withValues(alpha: 0.12)
+                      : theme.cardColor,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppColors.primary
+                        : theme.dividerColor.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Text(
+                  filter,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.textSecondary,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildHeaderCard(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -221,7 +328,7 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: const Icon(
-                  Icons.route_rounded,
+                  Icons.person_outline_rounded,
                   color: AppColors.primary,
                   size: 26,
                 ),
@@ -229,7 +336,7 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Text(
-                  'Your Career Roadmaps',
+                  'Your Profile Specs',
                   style: AppTextStyles.headlineSmall.copyWith(
                     color: theme.textTheme.bodyLarge?.color,
                   ),
@@ -239,7 +346,7 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
           ),
           const SizedBox(height: AppSpacing.lg),
           Text(
-            'Based on your profile',
+            'Current level and interest',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -291,10 +398,10 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
   }
 
   Widget _buildPathCard(
-    BuildContext context,
-    String pathId,
-    Map<String, dynamic> data,
-  ) {
+      BuildContext context,
+      String pathId,
+      Map<String, dynamic> data,
+      ) {
     final theme = Theme.of(context);
 
     final title = data['title']?.toString().trim();
@@ -410,6 +517,23 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
                       ],
                     ),
                   ),
+                  // الزر الجديد الذي تمت إضافته (الاشتراك)
+                  OutlinedButton(
+                    onPressed: () {
+                      _enrollInPath(pathId, displayTitle);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 44),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    ),
+                    child: const Text('Enroll'),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
                   ElevatedButton(
                     onPressed: () {
                       _openPathDetails(context, pathId, data);
@@ -488,7 +612,7 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            'No Learning Paths Yet',
+            'No Learning Paths Found',
             textAlign: TextAlign.center,
             style: AppTextStyles.headlineSmall.copyWith(
               color: theme.textTheme.bodyLarge?.color,
@@ -496,7 +620,7 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'There are currently no learning paths matching your level and career interest.',
+            'There are currently no learning paths matching the selected filter.',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textSecondary,
@@ -588,10 +712,10 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
   }
 
   void _openPathDetails(
-    BuildContext context,
-    String pathId,
-    Map<String, dynamic> data,
-  ) {
+      BuildContext context,
+      String pathId,
+      Map<String, dynamic> data,
+      ) {
     Navigator.push(
       context,
       MaterialPageRoute(

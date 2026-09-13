@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'features/stages/stages_progress_screen.dart';
 
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
@@ -30,6 +31,7 @@ class CyberPathApp extends StatelessWidget {
         '/admin_dashboard': (context) => const AdminDashboard(),
         '/roadmaps_explorer': (context) => const RoadmapsExplorerScreen(),
         '/profile_badges':(context) => const ProfileScreen(),
+        '/stages_progress_screen':(context) => const StagesProgressScreen(),
       },
     );
   }
