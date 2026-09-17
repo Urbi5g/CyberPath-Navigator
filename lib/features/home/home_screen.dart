@@ -7,6 +7,10 @@ import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 
+// ✅ استدعاء الصفحات المطلوبة (تأكد من تعديل المسار إذا كان مختلفاً في مشروعك)
+import '../stages/stages_progress_screen.dart';
+import 'activity_log_screen.dart';
+
 // ─────────────────────────────────────────────
 // Dynamic Theme Manager
 // ─────────────────────────────────────────────
@@ -63,6 +67,7 @@ class StudentModel {
   final int? points;
   final int? badges;
   final int? certificates;
+  final int completedStages; // إضافة عدد المراحل
   final List<ActivePathway> activePathways;
   final List<ActivityItem> recentActivities;
 
@@ -73,6 +78,7 @@ class StudentModel {
     required this.points,
     required this.badges,
     required this.certificates,
+    required this.completedStages, // إضافة عدد المراحل
     required this.activePathways,
     required this.recentActivities,
   });
@@ -161,6 +167,15 @@ class _StudentsDashboardScreenState extends State<students_dashboard> {
 
     final certificates = _readListLength(progressData?['certificates']);
 
+    // قراءة عدد المراحل المكتملة
+    int completedStagesCount = 0;
+    final compStages = progressData?['completedStages'];
+    if (compStages is int) {
+      completedStagesCount = compStages;
+    } else if (compStages is List) {
+      completedStagesCount = compStages.length;
+    }
+
     final activePathways = _readActivePathways(progressData?['activePathways']);
 
     final recentActivities = _readRecentActivities(
@@ -174,6 +189,7 @@ class _StudentsDashboardScreenState extends State<students_dashboard> {
       points: points,
       badges: badges,
       certificates: certificates,
+      completedStages: completedStagesCount,
       activePathways: activePathways,
       recentActivities: recentActivities,
     );
@@ -386,7 +402,7 @@ class _StudentsDashboardScreenState extends State<students_dashboard> {
                   ),
                   const SizedBox(height: AppSpacing.md),
 
-                  const MainNavigationGrid(),
+                  MainNavigationGrid(student: student),
                   const SizedBox(height: AppSpacing.xxl),
 
                   ActivePathwaysList(pathways: student.activePathways),
@@ -646,7 +662,9 @@ class ExploreRoadmapsCard extends StatelessWidget {
 // Navigation Widgets
 // ─────────────────────────────────────────────
 class MainNavigationGrid extends StatelessWidget {
-  const MainNavigationGrid({Key? key}) : super(key: key);
+  final StudentModel student;
+
+  const MainNavigationGrid({Key? key, required this.student}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -669,7 +687,7 @@ class MainNavigationGrid extends StatelessWidget {
       },
       {
         'title': 'عرض المراحل',
-        'desc': 'جميع إنجازاتك والمراحل',
+        'desc': 'أنجزت ${student.completedStages} مراحل',
         'icon': Icons.layers_outlined,
         'route': '/stages_progress',
         'color': theme.warning,
@@ -762,13 +780,21 @@ class StudentFeatureCard extends StatelessWidget {
           splashColor: iconColor.withOpacity(0.1),
           highlightColor: iconColor.withOpacity(0.05),
           onTap: () {
+            // ✅ التنقل المباشر للمسارات غير المعرفة في main.dart
             if (route == '/stages_progress') {
-              // Navigator.push(
-              //   context,
-              //   MaterialPageRoute(
-              //     builder: (context) => const StagesProgressScreen(),
-              //   ),
-              // );
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const StagesProgressScreen(),
+                ),
+              );
+            } else if (route == '/activity_log') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ActivityLogScreen(),
+                ),
+              );
             } else {
               Navigator.pushNamed(context, route);
             }
@@ -1140,7 +1166,15 @@ class RecentActivitiesList extends StatelessWidget {
               ),
             ),
             TextButton(
-              onPressed: () => Navigator.pushNamed(context, '/activity_log'),
+              onPressed: () {
+                // الانتقال المباشر لصفحة السجل من زر "عرض الكل"
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ActivityLogScreen(),
+                  ),
+                );
+              },
               style: TextButton.styleFrom(foregroundColor: theme.primary),
               child: Text(
                 'عرض الكل',

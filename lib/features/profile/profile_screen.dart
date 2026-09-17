@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import 'certificate_request_screen.dart';
 
 // ===============================
 // Dynamic Theme
@@ -40,7 +41,7 @@ class ProfileData {
   final int xp;
   final int badges;
   final int certificates;
-  final int stages; // تم إضافة المتغير لقراءة المراحل
+  final int stages;
   final List<Map<String, dynamic>> pathways;
 
   ProfileData({
@@ -112,7 +113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       xp: progressData['xp'] ?? 0,
       badges: (progressData['badges'] as List?)?.length ?? 0,
       certificates: (progressData['certificates'] as List?)?.length ?? 0,
-      stages: completedStagesCount, // ربط عدد المراحل
+      stages: completedStagesCount,
       pathways: pathways,
     );
   }
@@ -348,7 +349,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: AppSpacing.xxl),
                 _enrolledPaths(theme, profile.pathways),
                 const SizedBox(height: AppSpacing.xxl),
-                _settings(theme),
+
+                // ✅ تم استبدال زر الوضع الليلي بزر طلب الشهادة
+                _certificateRequestButton(theme, context),
+
                 const SizedBox(height: AppSpacing.xxl),
                 _updateButton(theme),
                 const SizedBox(height: AppSpacing.xxl),
@@ -426,7 +430,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(width: AppSpacing.md),
         Expanded(child: _statCard(theme, Icons.emoji_events, "Badges", profile.badges.toString(), theme.primary)),
         const SizedBox(width: AppSpacing.md),
-        // تم استبدال profile.certificates بـ profile.stages.toString() هنا
         Expanded(child: _statCard(theme, Icons.task_alt, "Stages", profile.stages.toString(), theme.success)),
       ],
     );
@@ -565,20 +568,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _settings(ProfileTheme theme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: theme.border),
-      ),
-      child: SwitchListTile(
-        title: Text(isDarkMode ? "الوضع الليلي" : "الوضع النهاري", style: AppTextStyles.bodyLarge.copyWith(color: theme.textPrimary)),
-        subtitle: Text("تغيير مظهر التطبيق", style: AppTextStyles.bodySmall.copyWith(color: theme.textSecondary)),
-        secondary: Icon(isDarkMode ? Icons.dark_mode : Icons.light_mode, color: theme.primary),
-        value: isDarkMode,
-        activeColor: theme.primary,
-        onChanged: (value) => setState(() => isDarkMode = value),
+  // ✅ الزر الجديد الخاص بطلب الشهادة (استبدال لزر الوضع الليلي)
+  Widget _certificateRequestButton(ProfileTheme theme, BuildContext context) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CertificateRequestScreen(),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: theme.border),
+        ),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.workspace_premium_outlined, color: theme.primary),
+          ),
+          title: Text(
+            "طلب الحصول على شهادة",
+            style: AppTextStyles.bodyLarge.copyWith(color: theme.textPrimary, fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            "اطلب شهادتك بعد إتمام المسار التدريبي",
+            style: AppTextStyles.bodySmall.copyWith(color: theme.textSecondary),
+          ),
+          trailing: Icon(Icons.arrow_forward_ios, size: 16, color: theme.textSecondary),
+        ),
       ),
     );
   }
@@ -629,3 +656,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
+
