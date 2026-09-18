@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dashboard_service.dart';
+import '../../data/my_curriculum_seeder.dart';
 
 import 'stage_management_screen.dart';
 
@@ -20,10 +22,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int users = 0;
   int stages = 0;
   bool loading = true;
-  final TextEditingController _userSearchController =
-  TextEditingController();
-
-  String _userSearch = '';
+  final GlobalKey<ScaffoldState> _scaffoldKey =
+  GlobalKey<ScaffoldState>();
 
   final List<_AdminMenuItem> _menuItems = const [
     _AdminMenuItem(title: 'Dashboard', icon: Icons.dashboard_outlined),
@@ -34,30 +34,67 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
-    loadDashboard();
+    _prepareMyCurriculum();
+  }
+
+  Future<void> _prepareMyCurriculum() async {
+    try {
+      // This migration manages only curriculum documents owned by the
+      // currently signed-in admin. Other admins' documents are untouched.
+      await MyCurriculumSeeder.ensureForCurrentAdmin();
+    } catch (_) {
+      // Keep the existing dashboard usable if seeding is blocked by
+      // Firestore rules or a temporary connection problem.
+    }
+
+    await loadDashboard();
   }
 
   Future<void> loadDashboard() async {
-    try {
-      final p = await dashboardService.getLearningPathsCount();
-      final u = await dashboardService.getUsersCount();
-      final s = await dashboardService.getStagesCount();
+    int? loadedPaths;
+    int? loadedUsers;
+    int? loadedStages;
 
-      if (mounted) {
-        setState(() {
-          paths = p;
-          users = u;
-          stages = s;
-          loading = false;
-        });
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        loadedPaths = 0;
+        loadedStages = 0;
+      } else {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('learning_paths')
+            .where('createdBy', isEqualTo: user.uid)
+            .get();
+        loadedPaths = snapshot.docs.length;
+
+        int stageTotal = 0;
+        for (final path in snapshot.docs) {
+        final stagesSnapshot = await FirebaseFirestore.instance
+            .collection('learning_paths')
+            .doc(path.id)
+            .collection('stages')
+            .get();
+          stageTotal += stagesSnapshot.docs.length;
+        }
+        loadedStages = stageTotal;
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
-    }
+    } catch (_) {}
+
+    try {
+      final usersSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .get();
+      loadedUsers = usersSnapshot.docs.length;
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    setState(() {
+      if (loadedPaths != null) paths = loadedPaths!;
+      if (loadedUsers != null) users = loadedUsers!;
+      if (loadedStages != null) stages = loadedStages!;
+      loading = false;
+    });
   }
 
   Future<void> _logout() async {
@@ -81,28 +118,77 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final theme = Theme.of(context);
     final isWide = MediaQuery.sizeOf(context).width >= 900;
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: isWide
-          ? null
-          : AppBar(
-        title: const Text('Admin Dashboard'),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+
+        if (_scaffoldKey.currentState?.isDrawerOpen == true) {
+          Navigator.of(context).pop();
+          return;
+        }
+
+        if (_selectedIndex != 0) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+          return;
+        }
+
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Exit'),
+              content: const Text(
+                'Do you want to exit the application?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(false);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: const Text('Exit'),
+                ),
+              ],
+            );
+          },
+        );
+
+        if (shouldExit == true) {
+          await SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
         backgroundColor: theme.scaffoldBackgroundColor,
-        elevation: 0,
-      ),
-      drawer: isWide ? null : _buildDrawer(theme),
-      body: Row(
-        children: [
-          if (isWide) _buildSidebar(theme),
-          Expanded(
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: _buildContent(theme),
+        appBar: isWide
+            ? null
+            : AppBar(
+          title: const Text('Admin Dashboard'),
+          backgroundColor: theme.scaffoldBackgroundColor,
+          elevation: 0,
+        ),
+        drawer: isWide ? null : _buildDrawer(theme),
+        body: Row(
+          children: [
+            if (isWide) _buildSidebar(theme),
+            Expanded(
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: _buildContent(theme),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -325,48 +411,37 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 subtitle: 'Manage CyberPath Navigator content and users.',
               ),
               const SizedBox(height: 28),
-              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
-                    .collection('learning_paths')
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  final pathCount = snapshot.hasData
-                      ? snapshot.data!.docs.length
-                      : null;
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.maxWidth >= 750 ? 3 : 1;
 
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      final columns = constraints.maxWidth >= 750 ? 3 : 1;
-
-                      return GridView.count(
-                        crossAxisCount: columns,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        childAspectRatio: 2.4,
-                        children: [
-                          _buildStatCard(
-                            theme,
-                            title: 'Learning Paths',
-                            value: pathCount?.toString() ?? (loading ? '...' : paths.toString()),
-                            icon: Icons.route_outlined,
-                          ),
-                          _buildStatCard(
-                            theme,
-                            title: 'Users',
-                            value: loading ? '...' : users.toString(),
-                            icon: Icons.people_outline,
-                          ),
-                          _buildStatCard(
-                            theme,
-                            title: 'Stages',
-                            value: loading ? '...' : stages.toString(),
-                            icon: Icons.menu_book_outlined,
-                          ),
-                        ],
-                      );
-                    },
+                  return GridView.count(
+                    crossAxisCount: columns,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 2.4,
+                    children: [
+                      _buildStatCard(
+                        theme,
+                        title: 'Learning Paths',
+                        value: loading ? '...' : paths.toString(),
+                        icon: Icons.route_outlined,
+                      ),
+                      _buildStatCard(
+                        theme,
+                        title: 'Users',
+                        value: loading ? '...' : users.toString(),
+                        icon: Icons.people_outline,
+                      ),
+                      _buildStatCard(
+                        theme,
+                        title: 'Stages',
+                        value: loading ? '...' : stages.toString(),
+                        icon: Icons.menu_book_outlined,
+                      ),
+                    ],
                   );
                 },
               ),
@@ -425,12 +500,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> _myLearningPathsStream() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return const Stream<QuerySnapshot<Map<String, dynamic>>>.empty();
+    }
+
+    return FirebaseFirestore.instance
+        .collection('learning_paths')
+        .where('createdBy', isEqualTo: user.uid)
+        .snapshots();
+  }
+
   Widget _buildLearningPaths(ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('learning_paths')
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+      stream: _myLearningPathsStream(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _buildErrorState(
@@ -443,7 +528,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final documents = snapshot.data?.docs ?? [];
+        final documents = [...(snapshot.data?.docs ?? [])];
+
+        documents.sort((a, b) {
+          final aCreated = a.data()['createdAt'];
+          final bCreated = b.data()['createdAt'];
+
+          if (aCreated is Timestamp && bCreated is Timestamp) {
+            return bCreated.compareTo(aCreated);
+          }
+
+          return 0;
+        });
 
         return SingleChildScrollView(
           child: Center(
@@ -527,369 +623,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildUsersSection(ThemeData theme) {
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .snapshots(),
-
-
-      builder: (context, snapshot) {
-
-
-        if (snapshot.connectionState ==
-            ConnectionState.waiting) {
-
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-
-        }
-
-
-        if (snapshot.hasError) {
-
-          return Center(
-            child: Text(
-              snapshot.error.toString(),
-            ),
-          );
-
-        }
-
-
-        final allUsers =
-            snapshot.data?.docs ?? [];
-
-
-
-        final filteredUsers =
-        allUsers.where((user) {
-
-
-          final data = user.data();
-
-
-          final name =
-          (data['name'] ?? '')
-              .toString()
-              .toLowerCase();
-
-
-          final email =
-          (data['email'] ?? '')
-              .toString()
-              .toLowerCase();
-
-
-
-          return name.contains(
-            _userSearch.toLowerCase(),
-          ) ||
-              email.contains(
-                _userSearch.toLowerCase(),
-              );
-
-
-        }).toList();
-
-
-
-
-
-        return Column(
-
-          children: [
-
-
-
-            // شريط البحث
-
-            TextField(
-
-              controller:
-              _userSearchController,
-
-
-              decoration:
-              InputDecoration(
-
-                hintText:
-                'Search users...',
-
-
-                prefixIcon:
-                const Icon(
-                  Icons.search,
-                ),
-
-
-                border:
-                OutlineInputBorder(
-
-                  borderRadius:
-                  BorderRadius.circular(12),
-
-                ),
-
-              ),
-
-
-
-              onChanged: (value) {
-
-
-                setState(() {
-
-                  _userSearch = value;
-
-                });
-
-
-              },
-
-            ),
-
-
-
-            const SizedBox(height: 16),
-
-
-
-
-            Expanded(
-
-              child: ListView.builder(
-
-                itemCount:
-                filteredUsers.length,
-
-
-                itemBuilder:
-                    (context, index) {
-
-
-
-                  final data =
-                  filteredUsers[index]
-                      .data();
-
-
-
-                  return Card(
-
-                    margin:
-                    const EdgeInsets.only(
-                      bottom: 12,
-                    ),
-
-
-                    child: ListTile(
-
-
-
-                      leading: Row(
-
-                        mainAxisSize:
-                        MainAxisSize.min,
-
-
-                        children: [
-
-
-
-                          CircleAvatar(
-
-                            radius: 15,
-
-                            child:
-                            Text(
-                              '${index + 1}',
-                            ),
-
-                          ),
-
-
-
-                          const SizedBox(
-                            width: 8,
-                          ),
-
-
-
-                          const CircleAvatar(
-
-                            child:
-                            Icon(
-                              Icons.person,
-                            ),
-
-                          ),
-
-
-                        ],
-
-                      ),
-
-
-
-
-                      title: Text(
-
-                        data['name'] ??
-                            'No Name',
-
-
-                        style:
-                        const TextStyle(
-
-                          fontWeight:
-                          FontWeight.w600,
-
-                        ),
-
-                      ),
-
-
-
-
-                      subtitle: Column(
-
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
-
-
-                        children: [
-
-
-
-                          Text(
-
-                            'Level: ${data['level'] ?? '-'}',
-
-                          ),
-
-
-
-                          Text(
-
-                            data['email'] ??
-                                '',
-
-                          ),
-
-
-
-                          Text(
-
-                            'Role: ${data['role'] ?? 'student'}',
-
-                          ),
-
-
-
-                        ],
-
-                      ),
-
-
-
-
-
-                      trailing:
-
-                      DropdownButton<String>(
-
-                        value:
-                        data['role'] ??
-                            'student',
-
-
-                        items: const [
-
-
-                          DropdownMenuItem(
-
-                            value:
-                            'student',
-
-                            child:
-                            Text(
-                              'Student',
-                            ),
-
-                          ),
-
-
-
-                          DropdownMenuItem(
-
-                            value:
-                            'admin',
-
-                            child:
-                            Text(
-                              'Admin',
-                            ),
-
-                          ),
-
-
-                        ],
-
-
-
-                        onChanged:
-                            (value) async {
-
-
-                          if (value == null)
-                            return;
-
-
-
-                          await FirebaseFirestore
-                              .instance
-                              .collection('users')
-                              .doc(
-                            filteredUsers[index]
-                                .id,
-                          )
-                              .update({
-
-                            'role':
-                            value,
-
-                          });
-
-
-
-                        },
-
-                      ),
-
-
-                    ),
-
-                  );
-
-
-                },
-
-              ),
-
-            ),
-
-          ],
-
-        );
-
-
-      },
-
-    );
-
+    return _UsersSection(theme: theme);
   }  Widget _buildPageHeader(
       ThemeData theme, {
         required String title,
@@ -958,6 +692,65 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ],
       ),
     );
+  }
+
+  Future<void> _deleteLearningPath(String pathId, String pathTitle) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Learning Path'),
+        content: Text(
+          'Are you sure you want to delete "$pathTitle"?\n\n'
+              'All stages inside this learning path will also be deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final stagesSnapshot = await FirebaseFirestore.instance
+          .collection('learning_paths')
+          .doc(pathId)
+          .collection('stages')
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final stage in stagesSnapshot.docs) {
+        batch.delete(stage.reference);
+      }
+
+      batch.delete(
+        FirebaseFirestore.instance.collection('learning_paths').doc(pathId),
+      );
+
+      await batch.commit();
+      await loadDashboard();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Learning path deleted successfully.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete learning path: $e')),
+      );
+    }
   }
 
   Widget _buildPathCard(
@@ -1101,6 +894,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                 ),
               ),
+              OutlinedButton.icon(
+                onPressed: () => _deleteLearningPath(pathId, title),
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Delete Path'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                  side: BorderSide(
+                    color: theme.colorScheme.error.withValues(alpha: 0.35),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
             ],
           ),
         ],
@@ -1197,6 +1008,324 @@ class _AdminDashboardState extends State<AdminDashboard> {
             Expanded(child: Text(message)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _UsersSection extends StatefulWidget {
+  final ThemeData theme;
+
+  const _UsersSection({
+    required this.theme,
+  });
+
+  @override
+  State<_UsersSection> createState() => _UsersSectionState();
+}
+
+class _UsersSectionState extends State<_UsersSection> {
+  final TextEditingController _searchController =
+  TextEditingController();
+
+  String _searchText = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // بعض إصدارات المشروع قد تستخدم أسماء مختلفة لحقول ملف المستخدم.
+  // نقرأ الحقل الأساسي أولاً ثم نستخدم البدائل بدون تغيير بيانات Firestore.
+  String _firstNonEmpty(
+      Map<String, dynamic> data,
+      List<String> keys,
+      ) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    }
+    return '';
+  }
+
+  String _getUserName(Map<String, dynamic> data) {
+    final directName = _firstNonEmpty(
+      data,
+      const [
+        'name',
+        'fullName',
+        'full_name',
+        'displayName',
+        'display_name',
+        'username',
+        'userName',
+      ],
+    );
+
+    if (directName.isNotEmpty) {
+      return directName;
+    }
+
+    final firstName = _firstNonEmpty(
+      data,
+      const ['firstName', 'first_name'],
+    );
+    final lastName = _firstNonEmpty(
+      data,
+      const ['lastName', 'last_name'],
+    );
+
+    final combinedName = '$firstName $lastName'.trim();
+    return combinedName;
+  }
+
+  String _getUserEmail(Map<String, dynamic> data) {
+    return _firstNonEmpty(
+      data,
+      const [
+        'email',
+        'emailAddress',
+        'email_address',
+        'userEmail',
+        'user_email',
+      ],
+    );
+  }
+
+  String _getUserLevel(Map<String, dynamic> data) {
+    return _firstNonEmpty(
+      data,
+      const [
+        'level',
+        'userLevel',
+        'currentLevel',
+        'current_level',
+        'difficultyLevel',
+      ],
+    );
+  }
+
+  String _getUserRole(Map<String, dynamic> data) {
+    final role = _firstNonEmpty(
+      data,
+      const ['role', 'userRole'],
+    );
+
+    return role.isEmpty ? 'student' : role;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: _buildUsersError(theme, snapshot.error.toString()),
+          );
+        }
+
+        final allUsers = snapshot.data?.docs ?? [];
+        final search = _searchText.trim().toLowerCase();
+
+        final filteredUsers = allUsers.where((document) {
+          final data = document.data();
+          final name = _getUserName(data).toLowerCase();
+          final email = _getUserEmail(data).toLowerCase();
+          final level = _getUserLevel(data).toLowerCase();
+
+          // البحث يعمل على الاسم والإيميل والمستوى.
+          return search.isEmpty ||
+              name.contains(search) ||
+              email.contains(search) ||
+              level.contains(search);
+        }).toList();
+
+        return Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search users...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchText.isNotEmpty
+                    ? IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchText = '';
+                    });
+                  },
+                )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onChanged: (value) {
+                // الحالة الخاصة بالبحث موجودة داخل هذا الـState فقط،
+                // لذلك لا يعاد بناء AdminDashboard ولا يفقد حقل البحث التركيز.
+                setState(() {
+                  _searchText = value;
+                });
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            Expanded(
+              child: filteredUsers.isEmpty
+                  ? Center(
+                child: Text(
+                  search.isEmpty
+                      ? 'No users found.'
+                      : 'No users match your search.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              )
+                  : ListView.builder(
+                itemCount: filteredUsers.length,
+                itemBuilder: (context, index) {
+                  final document = filteredUsers[index];
+                  final data = document.data();
+
+                  final name = _getUserName(data);
+                  final email = _getUserEmail(data);
+                  final level = _getUserLevel(data);
+                  final role = _getUserRole(data);
+                  final safeRole = role.toLowerCase() == 'admin'
+                      ? 'admin'
+                      : 'student';
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 15,
+                            child: Text('${index + 1}'),
+                          ),
+                          const SizedBox(width: 8),
+                          const CircleAvatar(
+                            child: Icon(Icons.person),
+                          ),
+                        ],
+                      ),
+                      title: Text(
+                        name.isNotEmpty ? name : 'No Name',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Level: ${level.isNotEmpty ? level : '-'}',
+                          ),
+                          Text(
+                            email.isNotEmpty ? email : 'No Email',
+                          ),
+                          Text('Role: $role'),
+                        ],
+                      ),
+                      trailing: DropdownButton<String>(
+                        value: safeRole,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'student',
+                            child: Text('Student'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'admin',
+                            child: Text('Admin'),
+                          ),
+                        ],
+                        onChanged: (value) async {
+                          if (value == null || value == safeRole) {
+                            return;
+                          }
+
+                          try {
+                            await FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(document.id)
+                                .update({'role': value});
+                          } catch (e) {
+                            if (!context.mounted) return;
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Failed to update role: $e',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildUsersError(ThemeData theme, String message) {
+    return Container(
+      margin: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.dividerColor.withValues(alpha: 0.20),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 42,
+            color: theme.colorScheme.error,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Unable to load users',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
