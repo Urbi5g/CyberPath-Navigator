@@ -25,6 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+
   @override
   void dispose() {
     _nameController.dispose();
