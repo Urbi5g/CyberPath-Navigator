@@ -3,10 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+
 import 'roadmap_details_screen.dart';
+import 'widgets/roadmaps_explorer_widgets.dart';
 
 class RoadmapsExplorerScreen extends StatefulWidget {
   const RoadmapsExplorerScreen({super.key});
@@ -25,7 +26,6 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
   bool _isLoadingUser = true;
   String? _errorMessage;
 
-  // قائمة الفلاتر وحالة الفلتر الحالي
   final List<String> _filters = ['All', 'Beginner', 'Intermediate', 'Advanced'];
   String _selectedFilter = 'All';
 
@@ -38,33 +38,18 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
   Future<void> _loadUserPreferences() async {
     try {
       final user = _auth.currentUser;
+      if (user == null) throw Exception('No authenticated user was found.');
 
-      if (user == null) {
-        throw Exception('No authenticated user was found.');
-      }
-
-      final userDocument = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      if (!userDocument.exists) {
-        throw Exception('User data was not found in Firestore.');
-      }
+      final userDocument = await _firestore.collection('users').doc(user.uid).get();
+      if (!userDocument.exists) throw Exception('User data was not found in Firestore.');
 
       final data = userDocument.data();
-
-      if (data == null) {
-        throw Exception('User data is empty.');
-      }
+      if (data == null) throw Exception('User data is empty.');
 
       final level = data['level']?.toString().trim();
       final interest = data['interest']?.toString().trim();
 
-      if (level == null ||
-          level.isEmpty ||
-          interest == null ||
-          interest.isEmpty) {
+      if (level == null || level.isEmpty || interest == null || interest.isEmpty) {
         throw Exception('Your level or job role has not been completed yet.');
       }
 
@@ -74,10 +59,10 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
         _level = level;
         _interest = interest;
         _isLoadingUser = false;
+        _errorMessage = null;
       });
     } catch (e) {
       if (!mounted) return;
-
       setState(() {
         _isLoadingUser = false;
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -85,35 +70,28 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
     }
   }
 
-  // دالة الاشتراك في المسار وتحديث سجل النشاطات
   Future<void> _enrollInPath(String pathId, String title) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     final progressRef = _firestore.collection('user_progress').doc(user.uid);
-
-    // تنسيق التاريخ لليوم الحالي
     final now = DateTime.now();
     final timeString = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
     try {
       await progressRef.set({
-        'activePathways': FieldValue.arrayUnion([
-          {
-            'id': pathId,
-            'title': title,
-            'currentStage': 'Introduction',
-            'progressPercent': 0.0,
-          }
-        ]),
-        'recentActivities': FieldValue.arrayUnion([
-          {
-            'title': 'Enrolled in $title',
-            'time': timeString,
-            'icon': 'pathway',
-            'color': 'success',
-          }
-        ])
+        'activePathways': FieldValue.arrayUnion([{
+          'id': pathId,
+          'title': title,
+          'currentStage': 'Introduction',
+          'progressPercent': 0.0,
+        }]),
+        'recentActivities': FieldValue.arrayUnion([{
+          'title': 'Enrolled in $title',
+          'time': timeString,
+          'icon': 'pathway',
+          'color': 'success',
+        }])
       }, SetOptions(merge: true));
 
       if (mounted) {
@@ -130,8 +108,11 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
     }
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _learningPathsStream() {
-    return _firestore.collection('learning_paths').snapshots();
+  void _openPathDetails(String pathId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => RoadmapDetailsScreen(pathId: pathId)),
+    );
   }
 
   @override
@@ -146,29 +127,24 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
         surfaceTintColor: Colors.transparent,
         title: Text(
           'Learning Paths',
-          style: AppTextStyles.headlineMedium.copyWith(
-            color: theme.textTheme.bodyLarge?.color,
-          ),
+          style: AppTextStyles.headlineMedium.copyWith(color: theme.textTheme.bodyLarge?.color),
         ),
         leading: IconButton(
           icon: Icon(Icons.arrow_back_rounded, color: theme.iconTheme.color),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SafeArea(child: _buildBody(context)),
+      body: SafeArea(child: _buildBody()),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (_isLoadingUser) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
+  Widget _buildBody() {
+    if (_isLoadingUser) return const Center(child: CircularProgressIndicator());
     if (_errorMessage != null) {
-      return _buildErrorState(context);
+      return ExplorerErrorWidget(errorMessage: _errorMessage!, onRetry: _loadUserPreferences);
     }
+
+    final theme = Theme.of(context);
 
     return RefreshIndicator(
       onRefresh: _loadUserPreferences,
@@ -176,550 +152,63 @@ class _RoadmapsExplorerScreenState extends State<RoadmapsExplorerScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          _buildHeaderCard(context),
+          ExplorerHeaderWidget(level: _level, interest: _interest),
           const SizedBox(height: AppSpacing.lg),
-          Text(
-            'All Learning Paths',
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: theme.textTheme.bodyLarge?.color,
-            ),
-          ),
+          Text('All Learning Paths', style: AppTextStyles.headlineSmall.copyWith(color: theme.textTheme.bodyLarge?.color)),
           const SizedBox(height: AppSpacing.sm),
           Text(
             'Explore all available cybersecurity learning paths across different levels and domains.',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-            ),
+            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: AppSpacing.lg),
-
-          // شريط الفلاتر
-          _buildFilterBar(theme),
+          FilterBarWidget(
+            filters: _filters,
+            selectedFilter: _selectedFilter,
+            onFilterChanged: (filter) => setState(() => _selectedFilter = filter),
+          ),
           const SizedBox(height: AppSpacing.lg),
-
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _learningPathsStream(),
+            stream: _firestore.collection('learning_paths').snapshots(),
             builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _buildFirestoreError(context, snapshot.error.toString());
-              }
-
+              if (snapshot.hasError) return FirestoreErrorWidget(error: snapshot.error.toString());
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48),
-                  child: Center(child: CircularProgressIndicator()),
-                );
+                return const Padding(padding: EdgeInsets.symmetric(vertical: 48), child: Center(child: CircularProgressIndicator()));
               }
 
               final documents = snapshot.data?.docs ?? [];
-
-              // تطبيق الفلتر على البيانات المسترجعة
               final filteredDocuments = documents.where((doc) {
                 if (_selectedFilter == 'All') return true;
                 final docLevel = doc.data()['level']?.toString().trim() ?? '';
-                // مقارنة المستوى بغض النظر عن حالة الأحرف
                 return docLevel.toLowerCase() == _selectedFilter.toLowerCase();
               }).toList();
 
-              if (filteredDocuments.isEmpty) {
-                return _buildEmptyState(context);
-              }
+              if (filteredDocuments.isEmpty) return const EmptyExplorerWidget();
 
-              final sortedDocuments = [...filteredDocuments];
-
-              sortedDocuments.sort((a, b) {
+              filteredDocuments.sort((a, b) {
                 final aData = a.data();
                 final bData = b.data();
-
-                final aCreatedAt = aData['createdAt'];
-                final bCreatedAt = bData['createdAt'];
-
-                if (aCreatedAt is Timestamp && bCreatedAt is Timestamp) {
-                  return bCreatedAt.compareTo(aCreatedAt);
+                if (aData['createdAt'] is Timestamp && bData['createdAt'] is Timestamp) {
+                  return (bData['createdAt'] as Timestamp).compareTo(aData['createdAt'] as Timestamp);
                 }
-
                 return 0;
               });
 
               return Column(
-                children: [
-                  for (final document in sortedDocuments) ...[
-                    _buildPathCard(context, document.id, document.data()),
-                    const SizedBox(height: AppSpacing.md),
-                  ],
-                ],
+                children: filteredDocuments.map((document) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: ExplorerPathCardWidget(
+                      pathId: document.id,
+                      data: document.data(),
+                      onEnroll: _enrollInPath,
+                      onView: () => _openPathDetails(document.id),
+                    ),
+                  );
+                }).toList(),
               );
             },
           ),
         ],
-      ),
-    );
-  }
-
-  // ودجت شريط الفلاتر
-  Widget _buildFilterBar(ThemeData theme) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: _filters.map((filter) {
-          final isSelected = _selectedFilter == filter;
-          return Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.sm),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedFilter = filter;
-                });
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: 8.0,
-                ),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? AppColors.primary.withValues(alpha: 0.12)
-                      : theme.cardColor,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(
-                    color: isSelected
-                        ? AppColors.primary
-                        : theme.dividerColor.withValues(alpha: 0.45),
-                  ),
-                ),
-                child: Text(
-                  filter,
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildHeaderCard(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        color: theme.cardColor,
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-                child: const Icon(
-                  Icons.person_outline_rounded,
-                  color: AppColors.primary,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(
-                  'Your Profile Specs',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    color: theme.textTheme.bodyLarge?.color,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            'Current level and interest',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              _buildProfileChip(context, Icons.school_rounded, _level ?? '—'),
-              _buildProfileChip(
-                context,
-                Icons.work_outline_rounded,
-                _interest ?? '—',
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileChip(BuildContext context, IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(width: 2),
-          Icon(icon, size: 17, color: AppColors.primary),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            label,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPathCard(
-      BuildContext context,
-      String pathId,
-      Map<String, dynamic> data,
-      ) {
-    final theme = Theme.of(context);
-
-    final title = data['title']?.toString().trim();
-    final description = data['description']?.toString().trim();
-    final level = data['level']?.toString().trim();
-    final interest = data['interest']?.toString().trim();
-
-    final displayTitle = title == null || title.isEmpty
-        ? 'Untitled Learning Path'
-        : title;
-
-    final displayDescription = description == null || description.isEmpty
-        ? 'No description available.'
-        : description;
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.45)),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-            color: Colors.black.withValues(alpha: 0.06),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  displayTitle,
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    color: theme.textTheme.bodyLarge?.color,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-                child: const Icon(
-                  Icons.arrow_forward_rounded,
-                  color: AppColors.primary,
-                  size: 18,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            displayDescription,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              if (level != null && level.isNotEmpty)
-                _buildInfoChip(context, Icons.school_outlined, level),
-              if (interest != null && interest.isNotEmpty)
-                _buildInfoChip(context, Icons.work_outline_rounded, interest),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _firestore
-                .collection('learning_paths')
-                .doc(pathId)
-                .collection('stages')
-                .snapshots(),
-            builder: (context, snapshot) {
-              final stageCount = snapshot.hasData
-                  ? snapshot.data!.docs.length
-                  : 0;
-
-              return Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.layers_outlined,
-                          size: 19,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          '$stageCount ${stageCount == 1 ? 'Stage' : 'Stages'}',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // الزر الجديد الذي تمت إضافته (الاشتراك)
-                  OutlinedButton(
-                    onPressed: () {
-                      _enrollInPath(pathId, displayTitle);
-                    },
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 44),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                      ),
-                    ),
-                    child: const Text('Enroll'),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  ElevatedButton(
-                    onPressed: () {
-                      _openPathDetails(context, pathId, data);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(0, 44),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                      ),
-                    ),
-                    child: const Text('View Path'),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoChip(BuildContext context, IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 7,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.textSecondary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: AppColors.textSecondary),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.45)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.route_outlined,
-              size: 32,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'No Learning Paths Found',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: theme.textTheme.bodyLarge?.color,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'There are currently no learning paths matching the selected filter.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-              height: 1.45,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.error_outline_rounded,
-              size: 52,
-              color: Colors.redAccent,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              'Unable to Load Roadmaps',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.headlineSmall.copyWith(
-                color: theme.textTheme.bodyLarge?.color,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              _errorMessage ?? 'Something went wrong.',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            ElevatedButton(
-              onPressed: _loadUserPreferences,
-              child: const Text('Try Again'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFirestoreError(BuildContext context, String error) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.cloud_off_rounded,
-            size: 42,
-            color: Colors.redAccent,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'Could not load learning paths.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: theme.textTheme.bodyLarge?.color,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            error,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openPathDetails(
-      BuildContext context,
-      String pathId,
-      Map<String, dynamic> data,
-      ) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RoadmapDetailsScreen(pathId: pathId),
       ),
     );
   }
